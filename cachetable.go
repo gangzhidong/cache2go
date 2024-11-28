@@ -244,8 +244,27 @@ func (table *CacheTable) deleteInternal(key interface{}) (*CacheItem, error) {
 func (table *CacheTable) Delete(key interface{}) (*CacheItem, error) {
 	table.Lock()
 	defer table.Unlock()
+	r, ok := table.items[key]
+	if !ok {
+		return nil, ErrKeyNotFound
+	}
 
-	return table.deleteInternal(key)
+	// Cache value so we don't keep blocking the mutex.
+	aboutToDeleteItem := table.aboutToDeleteItem
+	table.Unlock()
+
+	// Trigger callbacks before deleting an item from cache.
+	if aboutToDeleteItem != nil {
+		for _, callback := range aboutToDeleteItem {
+			callback(r)
+		}
+	}
+
+	table.Lock()
+	table.log("Deleting item with key", key, "created on", r.createdOn, "and hit", r.accessCount, "times from table", table.name)
+	delete(table.items, key)
+
+	return r, nil
 }
 
 // Exists returns whether an item exists in the cache. Unlike the Value method
